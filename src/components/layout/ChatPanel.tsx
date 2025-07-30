@@ -4,8 +4,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Send, Bot, User, Sparkles, Copy, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Send, Bot, User, Sparkles, Copy, ThumbsUp, ThumbsDown, AlertCircle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { useAI } from "@/hooks/useAI";
 
 interface Message {
   id: string;
@@ -13,6 +14,7 @@ interface Message {
   content: string;
   timestamp: Date;
   isGenerating?: boolean;
+  error?: boolean;
 }
 
 interface ChatPanelProps {
@@ -20,16 +22,17 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ onCodeGenerated }: ChatPanelProps) {
+  const { generateCode, isLoading, error } = useAI();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
       type: "assistant",
-      content: "Hello! I'm your AI assistant. I can help you build websites, components, and applications using simple prompts. What would you like to create today?",
+      content: "Hello! I'm JoyousApp AI, your coding assistant. I can help you build websites, components, and applications using simple prompts. Just describe what you want to create and I'll generate the complete HTML, CSS, and JavaScript code for you!\n\nWhat would you like to build today?",
       timestamp: new Date(),
     }
   ]);
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -41,7 +44,7 @@ export function ChatPanel({ onCodeGenerated }: ChatPanelProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || isGenerating) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -50,13 +53,15 @@ export function ChatPanel({ onCodeGenerated }: ChatPanelProps) {
       timestamp: new Date(),
     };
 
+    const currentInput = input.trim();
     setMessages(prev => [...prev, userMessage]);
     setInput("");
-    setIsLoading(true);
+    setIsGenerating(true);
 
-    // Simulate AI response with typing effect
+    // Create assistant message placeholder
+    const assistantMessageId = (Date.now() + 1).toString();
     const assistantMessage: Message = {
-      id: (Date.now() + 1).toString(),
+      id: assistantMessageId,
       type: "assistant",
       content: "",
       timestamp: new Date(),
@@ -65,40 +70,61 @@ export function ChatPanel({ onCodeGenerated }: ChatPanelProps) {
 
     setMessages(prev => [...prev, assistantMessage]);
 
-    // Simulate progressive response
-    const responses = [
-      "I'll help you create that! Let me generate the code...",
-      "\n\nHere's what I've built for you:",
-      "\n\n```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Generated App</title>\n    <script src=\"https://cdn.tailwindcss.com\"></script>\n</head>\n<body class=\"bg-gray-100 min-h-screen py-8\">\n    <div class=\"container mx-auto px-4\">\n        <h1 class=\"text-4xl font-bold text-center mb-8 text-gray-800\">Your Generated App</h1>\n        <div class=\"max-w-md mx-auto bg-white rounded-lg shadow-lg p-6\">\n            <h2 class=\"text-2xl font-semibold mb-4\">Welcome!</h2>\n            <p class=\"text-gray-600 mb-4\">This was generated based on your prompt:</p>\n            <blockquote class=\"border-l-4 border-blue-500 pl-4 italic text-gray-700 mb-4\">\n                \"" + input + "\"\n            </blockquote>\n            <button class=\"w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 transition-colors\">\n                Click me!\n            </button>\n        </div>\n    </div>\n</body>\n</html>\n```",
-      "\n\nI've created a responsive web page based on your request. The code is now visible in the preview panel!"
-    ];
+    try {
+      // Prepare conversation history for context
+      const conversationHistory = messages
+        .filter(msg => !msg.isGenerating && !msg.error)
+        .map(msg => ({
+          role: msg.type === "user" ? "user" as const : "assistant" as const,
+          content: msg.content
+        }));
 
-    let currentContent = "";
-    for (let i = 0; i < responses.length; i++) {
-      await new Promise(resolve => setTimeout(resolve, 800));
-      currentContent += responses[i];
+      const result = await generateCode(currentInput, conversationHistory);
       
+      // Update the assistant message with the response
       setMessages(prev => prev.map(msg => 
-        msg.id === assistantMessage.id 
-          ? { ...msg, content: currentContent }
+        msg.id === assistantMessageId 
+          ? { 
+              ...msg, 
+              content: result.content, 
+              isGenerating: false 
+            }
           : msg
       ));
-    }
 
-    // Extract and apply the generated code
-    const codeMatch = currentContent.match(/```html\n([\s\S]*?)\n```/);
-    if (codeMatch) {
-      onCodeGenerated(codeMatch[1]);
-    }
+      // Extract code from the response
+      const codeMatch = result.content.match(/```html\n([\s\S]*?)\n```/);
+      if (codeMatch) {
+        onCodeGenerated(codeMatch[1]);
+        toast({
+          title: "Code generated!",
+          description: "Your code has been updated in the preview panel.",
+        });
+      }
 
-    // Finish generation
-    setMessages(prev => prev.map(msg => 
-      msg.id === assistantMessage.id 
-        ? { ...msg, isGenerating: false }
-        : msg
-    ));
-    
-    setIsLoading(false);
+    } catch (error) {
+      console.error('Error generating code:', error);
+      
+      // Update message to show error
+      setMessages(prev => prev.map(msg => 
+        msg.id === assistantMessageId 
+          ? { 
+              ...msg, 
+              content: `Sorry, I encountered an error while generating your code: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
+              isGenerating: false,
+              error: true
+            }
+          : msg
+      ));
+
+      toast({
+        title: "Generation failed",
+        description: "Failed to generate code. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -140,14 +166,24 @@ export function ChatPanel({ onCodeGenerated }: ChatPanelProps) {
               className={`flex gap-3 ${message.type === "user" ? "justify-end" : "justify-start"}`}
             >
               {message.type === "assistant" && (
-                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center flex-shrink-0 mt-1">
-                  <Bot className="w-4 h-4 text-white" />
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-1 ${
+                  message.error 
+                    ? "bg-destructive" 
+                    : "bg-gradient-to-br from-blue-500 to-purple-600"
+                }`}>
+                  {message.error ? (
+                    <AlertCircle className="w-4 h-4 text-white" />
+                  ) : (
+                    <Bot className="w-4 h-4 text-white" />
+                  )}
                 </div>
               )}
               
               <Card className={`max-w-[80%] p-3 ${
                 message.type === "user" 
                   ? "bg-primary text-primary-foreground" 
+                  : message.error
+                  ? "bg-destructive/10 border-destructive/20"
                   : "bg-card"
               }`}>
                 <div className="flex items-start justify-between gap-2">
@@ -208,7 +244,7 @@ export function ChatPanel({ onCodeGenerated }: ChatPanelProps) {
             onKeyDown={handleKeyDown}
             placeholder="Describe what you want to build... (Press Enter to send, Shift+Enter for new line)"
             className="min-h-[60px] resize-none"
-            disabled={isLoading}
+            disabled={isLoading || isGenerating}
           />
           
           <div className="flex items-center justify-between">
@@ -216,14 +252,14 @@ export function ChatPanel({ onCodeGenerated }: ChatPanelProps) {
               <Badge variant="outline" className="text-xs">
                 {input.length}/2000
               </Badge>
-              {isLoading && (
+              {(isLoading || isGenerating) && (
                 <Badge variant="secondary" className="text-xs animate-pulse">
-                  AI is thinking...
+                  AI is generating...
                 </Badge>
               )}
             </div>
             
-            <Button type="submit" disabled={!input.trim() || isLoading} size="sm">
+            <Button type="submit" disabled={!input.trim() || isLoading || isGenerating} size="sm">
               <Send className="w-4 h-4 mr-2" />
               Send
             </Button>
