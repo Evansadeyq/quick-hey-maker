@@ -2,11 +2,15 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Send, Bot, User, Sparkles, Copy, ThumbsUp, ThumbsDown, AlertCircle } from "lucide-react";
-import { toast } from "@/hooks/use-toast";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Bot, User, Send, Copy, ThumbsUp, ThumbsDown, Loader2, Image, FileText } from "lucide-react";
+import { toast } from "sonner";
 import { useAI } from "@/hooks/useAI";
+import { ImageGenerator } from "./ImageGenerator";
+import { TemplateLibrary } from "../templates/TemplateLibrary";
 
 interface Message {
   id: string;
@@ -23,28 +27,17 @@ interface ChatPanelProps {
 
 export function ChatPanel({ onCodeGenerated }: ChatPanelProps) {
   const { generateCode, isLoading, error } = useAI();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "welcome",
-      type: "assistant",
-      content: "Hello! I'm JoyousApp AI, your coding assistant. I can help you build websites, components, and applications using simple prompts. Just describe what you want to create and I'll generate the complete HTML, CSS, and JavaScript code for you!\n\nWhat would you like to build today?",
-      timestamp: new Date(),
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (scrollAreaRef.current) {
-      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading || isGenerating) return;
+    if (!input.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -56,7 +49,6 @@ export function ChatPanel({ onCodeGenerated }: ChatPanelProps) {
     const currentInput = input.trim();
     setMessages(prev => [...prev, userMessage]);
     setInput("");
-    setIsGenerating(true);
 
     // Create assistant message placeholder
     const assistantMessageId = (Date.now() + 1).toString();
@@ -96,10 +88,7 @@ export function ChatPanel({ onCodeGenerated }: ChatPanelProps) {
       const codeMatch = result.content.match(/```html\n([\s\S]*?)\n```/);
       if (codeMatch) {
         onCodeGenerated(codeMatch[1]);
-        toast({
-          title: "Code generated!",
-          description: "Your code has been updated in the preview panel.",
-        });
+        toast.success("Beautiful website generated successfully!");
       }
 
     } catch (error) {
@@ -110,20 +99,14 @@ export function ChatPanel({ onCodeGenerated }: ChatPanelProps) {
         msg.id === assistantMessageId 
           ? { 
               ...msg, 
-              content: `Sorry, I encountered an error while generating your code: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
+              content: `Sorry, I encountered an error while generating your website: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
               isGenerating: false,
               error: true
             }
           : msg
       ));
 
-      toast({
-        title: "Generation failed",
-        description: "Failed to generate code. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsGenerating(false);
+      toast.error("Failed to generate website. Please try again.");
     }
   };
 
@@ -136,136 +119,176 @@ export function ChatPanel({ onCodeGenerated }: ChatPanelProps) {
 
   const copyMessage = (content: string) => {
     navigator.clipboard.writeText(content);
-    toast({
-      title: "Copied to clipboard",
-      description: "Message content copied successfully",
-    });
+    toast.success("Copied to clipboard!");
   };
 
   return (
-    <div className="h-full flex flex-col bg-background">
-      {/* Header */}
-      <div className="border-b border-border p-4">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-            <Bot className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold">AI Assistant</h2>
-            <p className="text-sm text-muted-foreground">Ready to help you build</p>
-          </div>
-        </div>
-      </div>
+    <div className="flex flex-col h-full bg-background">
+      <CardHeader className="border-b">
+        <CardTitle className="flex items-center gap-2">
+          <Bot className="h-5 w-5" />
+          JoyousApp AI
+          <Badge variant="secondary" className="ml-auto">
+            Pro
+          </Badge>
+        </CardTitle>
+      </CardHeader>
 
-      {/* Messages */}
-      <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
-        <div className="space-y-4">
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex gap-3 ${message.type === "user" ? "justify-end" : "justify-start"}`}
-            >
-              {message.type === "assistant" && (
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-1 ${
-                  message.error 
-                    ? "bg-destructive" 
-                    : "bg-gradient-to-br from-blue-500 to-purple-600"
-                }`}>
-                  {message.error ? (
-                    <AlertCircle className="w-4 h-4 text-white" />
-                  ) : (
-                    <Bot className="w-4 h-4 text-white" />
-                  )}
+      <Tabs defaultValue="chat" className="flex-1 flex flex-col">
+        <TabsList className="grid w-full grid-cols-3 m-4">
+          <TabsTrigger value="chat">Chat</TabsTrigger>
+          <TabsTrigger value="templates">Templates</TabsTrigger>
+          <TabsTrigger value="images">Images</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="chat" className="flex-1 flex flex-col m-0">
+          <ScrollArea className="flex-1 p-4">
+            <div className="space-y-4">
+              {messages.length === 0 && (
+                <div className="text-center text-muted-foreground py-8">
+                  <Bot className="h-12 w-12 mx-auto mb-4 text-primary" />
+                  <h3 className="text-lg font-semibold mb-2">Welcome to JoyousApp AI</h3>
+                  <p className="text-sm max-w-md mx-auto">
+                    I'm your AI assistant for creating stunning, modern websites. 
+                    Describe what you want to build and I'll generate beautiful, 
+                    professional code with images and modern design.
+                  </p>
+                  <div className="mt-6 space-y-2 text-xs">
+                    <p className="font-medium">Try these prompts:</p>
+                    <div className="grid grid-cols-1 gap-2 max-w-sm mx-auto">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => setInput("Create a modern e-commerce website for electronics")}
+                      >
+                        Electronics Store
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => setInput("Build a luxury travel booking website")}
+                      >
+                        Travel Booking
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => setInput("Design a SaaS landing page")}
+                      >
+                        SaaS Landing
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               )}
               
-              <Card className={`max-w-[80%] p-3 ${
-                message.type === "user" 
-                  ? "bg-primary text-primary-foreground" 
-                  : message.error
-                  ? "bg-destructive/10 border-destructive/20"
-                  : "bg-card"
-              }`}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1">
-                    <pre className="whitespace-pre-wrap font-sans text-sm">
-                      {message.content}
-                    </pre>
-                    {message.isGenerating && (
-                      <div className="flex items-center gap-1 mt-2">
-                        <Sparkles className="w-3 h-3 animate-spin" />
-                        <span className="text-xs text-muted-foreground">Generating...</span>
+              {messages.map((message, index) => (
+                <div key={index} className="flex gap-3">
+                  <div className="flex-shrink-0">
+                    {message.type === 'user' ? (
+                      <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
+                        <User className="h-4 w-4 text-primary-foreground" />
+                      </div>
+                    ) : (
+                      <div className="h-8 w-8 rounded-full bg-accent flex items-center justify-center">
+                        <Bot className="h-4 w-4 text-accent-foreground" />
                       </div>
                     )}
                   </div>
-                  
-                  {!message.isGenerating && (
-                    <div className="flex gap-1 ml-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => copyMessage(message.content)}
-                        className="h-6 w-6 p-0"
-                      >
-                        <Copy className="w-3 h-3" />
-                      </Button>
-                      {message.type === "assistant" && (
-                        <>
-                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                            <ThumbsUp className="w-3 h-3" />
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                            <ThumbsDown className="w-3 h-3" />
-                          </Button>
-                        </>
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">
+                        {message.type === 'user' ? 'You' : 'JoyousApp AI'}
+                      </span>
+                      {message.isGenerating && (
+                        <Badge variant="secondary" className="text-xs">
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          Generating...
+                        </Badge>
                       )}
                     </div>
-                  )}
+                    <div className="prose prose-sm max-w-none">
+                      <div className="whitespace-pre-wrap text-sm">{message.content}</div>
+                    </div>
+                    {message.type === 'assistant' && !message.isGenerating && (
+                      <div className="flex items-center gap-2 pt-2">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => copyMessage(message.content)}
+                        >
+                          <Copy className="h-3 w-3 mr-1" />
+                          Copy
+                        </Button>
+                        <Button variant="ghost" size="sm">
+                          <ThumbsUp className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm">
+                          <ThumbsDown className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </Card>
-              
-              {message.type === "user" && (
-                <div className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center flex-shrink-0 mt-1">
-                  <User className="w-4 h-4" />
-                </div>
-              )}
+              ))}
+              <div ref={messagesEndRef} />
             </div>
-          ))}
-        </div>
-      </ScrollArea>
+          </ScrollArea>
 
-      {/* Input */}
-      <div className="border-t border-border p-4">
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <Textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Describe what you want to build... (Press Enter to send, Shift+Enter for new line)"
-            className="min-h-[60px] resize-none"
-            disabled={isLoading || isGenerating}
-          />
-          
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs">
-                {input.length}/2000
-              </Badge>
-              {(isLoading || isGenerating) && (
-                <Badge variant="secondary" className="text-xs animate-pulse">
-                  AI is generating...
-                </Badge>
-              )}
-            </div>
-            
-            <Button type="submit" disabled={!input.trim() || isLoading || isGenerating} size="sm">
-              <Send className="w-4 h-4 mr-2" />
-              Send
-            </Button>
+          <div className="border-t p-4">
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <Textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Describe the website you want to create... (e.g., 'Create a modern e-commerce website for selling electronics with a dark theme')"
+                className="min-h-[80px] resize-none"
+                disabled={isLoading}
+              />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    GPT-4.1 Turbo
+                  </Badge>
+                  <Badge variant="outline" className="text-xs">
+                    Modern Design
+                  </Badge>
+                </div>
+                <Button type="submit" disabled={isLoading || !input.trim()}>
+                  {isLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <Send className="h-4 w-4 mr-2" />
+                  )}
+                  Generate
+                </Button>
+              </div>
+            </form>
           </div>
-        </form>
-      </div>
+        </TabsContent>
+
+        <TabsContent value="templates" className="flex-1 flex flex-col m-0">
+          <div className="flex-1 p-4">
+            <TemplateLibrary onTemplateSelect={onCodeGenerated} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="images" className="flex-1 flex flex-col m-0">
+          <div className="flex-1 p-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Image className="h-5 w-5" />
+                  Image Generator
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ImageGenerator />
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
